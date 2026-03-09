@@ -96,7 +96,61 @@ A. 放松娱乐  B. 社交互动  C. 挑战成就
 
 ## 三、定时采集 (`/hobby setup`)
 
+### 1. 检查已有任务
+
+```bash
+launchctl list | grep hobby
+```
+
+如果已存在，显示任务状态；如果不存在，进入创建流程。
+
+### 2. 创建定时任务
+
 创建 launchd 定时任务，每天 22:00 自动采集，结果保存到 `~/hobby-data/history/`
+
+```bash
+# 创建脚本
+mkdir -p ~/hobby-data/history
+cat > ~/hobby-data/daily_collect.sh << 'EOF'
+#!/bin/bash
+DATE=$(date +%Y-%m-%d)
+cd ~/hobby-skill && source .venv/bin/activate
+claude -p "/hobby collect" > ~/hobby-data/history/profile_$DATE.json 2>&1
+EOF
+chmod +x ~/hobby-data/daily_collect.sh
+
+# 创建 launchd 任务
+cat > ~/Library/LaunchAgents/com.hobby.daily.plist << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hobby.daily</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/$(whoami)/hobby-data/daily_collect.sh</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>22</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+</dict>
+</plist>
+EOF
+
+launchctl load ~/Library/LaunchAgents/com.hobby.daily.plist
+```
+
+### 3. 验证任务
+
+```bash
+launchctl list | grep hobby
+```
 
 ---
 
