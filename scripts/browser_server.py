@@ -39,14 +39,6 @@ PLATFORMS = {
             "我的收藏": "https://space.bilibili.com/favlist",
         }
     },
-    "xianyu": {
-        "name": "闲鱼",
-        "url": "https://www.goofish.com",
-        "pages": {
-            "首页推荐": "https://www.goofish.com",
-            "我的发布": "https://www.goofish.com/personal",
-        }
-    },
     "weibo": {
         "name": "微博",
         "url": "https://weibo.com",
@@ -69,7 +61,6 @@ PLATFORMS = {
 LOGIN_INDICATORS = {
     "xiaohongshu": {"in": ["[class*='avatar']"], "out": ["text=登录"]},
     "bilibili": {"in": [".bili-avatar"], "out": ["text=登录"]},
-    "xianyu": {"in": ["[class*='avatar']"], "out": ["text=登录"]},
     "weibo": {"in": [".woo-avatar"], "out": ["text=登录"]},
     "zhihu": {"in": [".AppHeader-profile"], "out": ["text=登录"]},
 }
@@ -149,7 +140,12 @@ async def cmd_open(platform: str):
             viewport={"width": 1280, "height": 900},
             locale="zh-CN",
         )
-        page = await context.new_page()
+        # 使用现有页面而非新建标签页
+        pages = context.pages
+        if pages:
+            page = pages[0]
+        else:
+            page = await context.new_page()
         await page.goto(PLATFORMS[platform]["url"])
 
         output({"status": "opened", "message": "浏览器已打开，请在浏览器中操作，登录完成后回复'登录好了'", "url": PLATFORMS[platform]["url"]})
