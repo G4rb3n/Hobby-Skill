@@ -1,4 +1,4 @@
-# Hobby - 个人兴趣与性格分析
+# Hobby-Skill - 个人兴趣与性格分析
 
 通过分析数字足迹认识自己。支持浏览器自动化采集、定时任务、历史追踪、对话探索。
 
@@ -18,7 +18,7 @@
 ### 安装依赖
 
 ```bash
-cd ~/hobby
+cd ~/hobby-skill
 python -m venv .venv
 source .venv/bin/activate
 pip install playwright
@@ -29,7 +29,7 @@ playwright install chromium
 
 将此项目作为 Claude Code Skill 使用：
 
-1. 复制 `SKILL.md` 到 `~/.claude/skills/hobby/skill.md`
+1. 复制 `SKILL.md` 到 `~/.claude/skills/hobby/SKILL.md`
 2. 在 Claude Code 中执行 `/hobby` 命令
 
 ### 可用命令

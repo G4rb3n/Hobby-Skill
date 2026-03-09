@@ -6,7 +6,7 @@ description: |
   触发词：/hobby collect、/hobby chat、/hobby trend、/hobby setup、分析我的兴趣、我的数字画像
 ---
 
-# Hobby - 个人兴趣与性格分析
+# Hobby-Skill - 个人兴趣与性格分析
 
 **核心原则：所有数据处理在本地完成，不上传任何个人数据。**
 
@@ -28,7 +28,7 @@ description: |
 ### 1. 检查登录状态
 
 ```bash
-cd ~/hobby && source .venv/bin/activate && python scripts/browser_server.py status
+cd ~/hobby-skill && source .venv/bin/activate && python scripts/browser_server.py status
 ```
 
 向用户显示各平台登录状态（✅已登录/❌未登录）。
