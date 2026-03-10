@@ -41,6 +41,18 @@ playwright install chromium
 | `/hobby trend` | 查看兴趣变化趋势 |
 | `/hobby setup` | 设置每日定时采集 |
 
+`/hobby collect`
+![collect.png](collect.png)
+
+`/hobby chat`
+![chat.png](chat.png)
+
+`/hobby trend`
+![trend.png](trend.png)
+
+`/hobby setup`
+![setup.png](setup.png)
+
 ## 平台页面
 
 | 平台 | 可采集页面 |
