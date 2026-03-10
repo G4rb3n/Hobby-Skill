@@ -24,8 +24,6 @@ PLATFORMS = {
         "url": "https://www.xiaohongshu.com",
         "pages": {
             "发现": "https://www.xiaohongshu.com/explore",
-            # 个人页面需要在登录后动态获取用户ID
-            # 格式: /user/profile/{user_id}?tab=xxx
             "我的点赞": "https://www.xiaohongshu.com/user/profile/self?tab=liked",
             "我的收藏": "https://www.xiaohongshu.com/user/profile/self?tab=fav&subTab=note",
         }
@@ -37,6 +35,24 @@ PLATFORMS = {
             "首页推荐": "https://www.bilibili.com",
             "历史记录": "https://www.bilibili.com/account/history",
             "我的收藏": "https://space.bilibili.com/favlist",
+        }
+    },
+    "douban": {
+        "name": "豆瓣",
+        "url": "https://www.douban.com",
+        "pages": {
+            "电影想看": "https://movie.douban.com/mine?status=wish",
+            "电影看过": "https://movie.douban.com/mine?status=collect",
+            "书影音档案": "https://www.douban.com/mine/",
+            "我的小组": "https://www.douban.com/group/mine",
+        }
+    },
+    "neteasemusic": {
+        "name": "网易云音乐",
+        "url": "https://music.163.com",
+        "pages": {
+            "我的歌单": "https://music.163.com/#/my/m/music/playlist",
+            "听歌排行": "https://music.163.com/#/my/m/music/record",
         }
     },
     "weibo": {
@@ -60,7 +76,9 @@ PLATFORMS = {
 
 LOGIN_INDICATORS = {
     "xiaohongshu": {"in": ["[class*='avatar']"], "out": ["text=登录"]},
-    "bilibili": {"in": [".bili-avatar"], "out": ["text=登录"]},
+    "bilibili": {"in": [".bili-avatar", ".header-avatar-wrap", "[class*='avatar']"], "out": ["text=登录"]},
+    "douban": {"in": [".nav-user-avatar", ".user-avatar", "a[href*='/mine/']"], "out": ["text=登录", "text=注册"]},
+    "neteasemusic": {"in": [".name", "[data-res-id='my']"], "out": ["text=登录"]},
     "weibo": {"in": [".woo-avatar"], "out": ["text=登录"]},
     "zhihu": {"in": [".AppHeader-profile"], "out": ["text=登录"]},
 }
@@ -167,6 +185,7 @@ async def cmd_open(platform: str):
 
 async def cmd_crawl(platform: str, url: str, name: str = ""):
     """爬取页面（无头模式，使用已保存的cookie）"""
+    import re
     playwright = None
     context = None
     try:
@@ -185,35 +204,306 @@ async def cmd_crawl(platform: str, url: str, name: str = ""):
         items = []
         seen = set()
 
-        for _ in range(3):
-            links = await page.query_selector_all("a[href]")
-            for link in links:
-                try:
-                    href = await link.get_attribute("href")
-                    text = await link.inner_text()
-                    if href and href not in seen and len(text.strip()) > 5:
-                        seen.add(href)
-                        img = await link.query_selector("img")
-                        img_src = await img.get_attribute("src") if img else ""
-                        base = page.url.split("/")[2]
-                        full_url = href if href.startswith("http") else f"https://{base}{href}"
-                        items.append({
-                            "title": text.strip()[:200],
-                            "url": full_url,
-                            "image": img_src,
-                        })
-                except:
-                    continue
+        # B站首页特殊处理：提取视频标题
+        if platform == "bilibili" and ("bilibili.com$" in url or "bilibili.com/$" in url or url.endswith("bilibili.com")):
+            # 滚动加载更多内容
+            for _ in range(4):
+                await page.evaluate("window.scrollBy(0, 600)")
+                await asyncio.sleep(0.8)
 
-            await page.evaluate("window.scrollBy(0, window.innerHeight)")
-            await asyncio.sleep(1.5)
+            # 使用精确的标题选择器
+            title_selectors = [
+                ".bili-video-card__info--tit",
+                ".feed-card .title",
+                "[class*='video-title']",
+                "h3[class*='title']"
+            ]
 
-        # 去重
+            for selector in title_selectors:
+                elements = await page.query_selector_all(selector)
+                for elem in elements:
+                    try:
+                        text = await elem.inner_text()
+                        text = text.strip()
+                        # 过滤：长度>5，不是纯数字/时间格式
+                        if text and len(text) > 5:
+                            if not re.match(r'^[\d.\s万千百:]+$', text):
+                                if not re.match(r'^\d+[:\d]+$', text):
+                                    if text not in seen:
+                                        seen.add(text)
+                                        items.append({
+                                            "title": text[:200],
+                                            "url": "",
+                                            "image": "",
+                                        })
+                    except:
+                        pass
+
+            # 备用：从带title属性的视频链接获取
+            if len(items) < 30:
+                links = await page.query_selector_all("a[href*='video/BV'][title]")
+                for link in links:
+                    try:
+                        title = await link.get_attribute("title")
+                        href = await link.get_attribute("href")
+                        if title and len(title) > 5 and title not in seen:
+                            if not re.match(r'^[\d.\s万千百:]+$', title):
+                                seen.add(title)
+                                base = page.url.split("/")[2]
+                                full_url = href if href.startswith("http") else f"https://{base}{href}"
+                                items.append({
+                                    "title": title[:200],
+                                    "url": full_url,
+                                    "image": "",
+                                })
+                    except:
+                        pass
+
+        # B站收藏页面特殊处理
+        elif platform == "bilibili" and "favlist" in url:
+            # 滚动加载更多内容
+            for _ in range(6):
+                await page.evaluate("window.scrollBy(0, 500)")
+                await asyncio.sleep(0.6)
+
+            # 收藏页面的视频卡片选择器
+            fav_selectors = [
+                ".bili-video-card .bili-video-card__info--tit",
+                ".video-card .title",
+                "[class*='video-card'] [class*='title']",
+                ".fav-video-list .title",
+            ]
+
+            for selector in fav_selectors:
+                elements = await page.query_selector_all(selector)
+                for elem in elements:
+                    try:
+                        # 尝试获取title属性或文本
+                        text = await elem.get_attribute("title")
+                        if not text:
+                            text = await elem.inner_text()
+                        text = text.strip() if text else ""
+
+                        if text and len(text) > 8 and text not in seen:
+                            if not re.match(r'^[\d.\s万千百:]+$', text):
+                                if "纪录片" not in text[:4] and "电影" not in text[:3]:
+                                    seen.add(text)
+                                    items.append({
+                                        "title": text[:200],
+                                        "url": "",
+                                        "image": "",
+                                    })
+                    except:
+                        pass
+
+            # 备用方法：查找视频链接
+            if len(items) < 10:
+                video_links = await page.query_selector_all("a[href*='video/BV']")
+                for link in video_links:
+                    try:
+                        # 尝试多种方式获取标题
+                        title = await link.get_attribute("title")
+                        if not title:
+                            # 查找子元素中的标题
+                            title_elem = await link.query_selector("[class*='title'], [class*='tit']")
+                            if title_elem:
+                                title = await title_elem.inner_text()
+                        if not title:
+                            title = await link.inner_text()
+
+                        href = await link.get_attribute("href")
+                        title = title.strip() if title else ""
+
+                        if title and len(title) > 8 and title not in seen:
+                            if not re.match(r'^[\d.\s万千百:]+$', title):
+                                if "纪录片" not in title[:4] and "电影" not in title[:3]:
+                                    seen.add(title)
+                                    base = page.url.split("/")[2]
+                                    full_url = href if href.startswith("http") else f"https://{base}{href}"
+                                    items.append({
+                                        "title": title[:200],
+                                        "url": full_url,
+                                        "image": "",
+                                    })
+                    except:
+                        pass
+
+        # B站历史记录页面特殊处理
+        elif platform == "bilibili" and "history" in url:
+            for _ in range(5):
+                await page.evaluate("window.scrollBy(0, 500)")
+                await asyncio.sleep(0.6)
+
+            # 历史记录的标题提取
+            history_selectors = [
+                ".history-list .title",
+                "[class*='history'] [class*='title']",
+                "a[href*='video/BV'][title]",
+            ]
+
+            for selector in history_selectors:
+                elements = await page.query_selector_all(selector)
+                for elem in elements:
+                    try:
+                        text = await elem.get_attribute("title")
+                        if not text:
+                            text = await elem.inner_text()
+                        text = text.strip() if text else ""
+
+                        if text and len(text) > 8 and text not in seen:
+                            if not re.match(r'^[\d.\s万千百:]+$', text):
+                                seen.add(text)
+                                items.append({
+                                    "title": text[:200],
+                                    "url": "",
+                                    "image": "",
+                                })
+                    except:
+                        pass
+
+        # 豆瓣页面特殊处理
+        elif platform == "douban":
+            await asyncio.sleep(2)
+
+            # 豆瓣电影/书籍列表
+            douban_selectors = [
+                ".item .title a",
+                ".list .title a",
+                "[class*='item'] [class*='title'] a",
+                "a[href*='subject'][title]",
+            ]
+
+            for selector in douban_selectors:
+                elements = await page.query_selector_all(selector)
+                for elem in elements:
+                    try:
+                        title = await elem.get_attribute("title")
+                        if not title:
+                            title = await elem.inner_text()
+                        title = title.strip() if title else ""
+
+                        href = await elem.get_attribute("href")
+
+                        if title and len(title) > 3 and title not in seen:
+                            # 过滤无效标题
+                            if not re.match(r'^[\d.\s万千百:]+$', title):
+                                if "备案" not in title and "许可证" not in title:
+                                    if "登录" not in title and "注册" not in title:
+                                        seen.add(title)
+                                        base = page.url.split("/")[2]
+                                        full_url = href if (href and href.startswith("http")) else f"https://{base}{href}" if href else ""
+                                        items.append({
+                                            "title": title[:200],
+                                            "url": full_url,
+                                            "image": "",
+                                        })
+                    except:
+                        pass
+
+        # 网易云音乐页面特殊处理（iframe嵌套）
+        elif platform == "neteasemusic":
+            # 网易云音乐使用 iframe，            await asyncio.sleep(3)
+
+            # 尝试获取 iframe 内容
+            frame = page.frame_locator("iframe[name='contentFrame']")
+            if frame:
+                # 在 iframe 中查找歌单
+                song_selectors = [
+                    ".m-playlist .title",
+                    "[class*='playlist'] [class*='name']",
+                    ".n-song",
+                ]
+
+                for selector in song_selectors:
+                    elements = await frame.query_selector_all(selector)
+                    for elem in elements:
+                        try:
+                            title = await elem.inner_text()
+                            title = title.strip() if title else ""
+
+                            if title and len(title) > 2 and title not in seen:
+                                if not re.match(r'^[\d.\s万千百:]+$', title):
+                                    if "播放" not in title[:3] and "收藏" not in title[:3]:
+                                        seen.add(title)
+                                        items.append({
+                                            "title": title[:200],
+                                            "url": "",
+                                            "image": "",
+                                        })
+                        except:
+                            pass
+            else:
+                # 如果没有 iframe，尝试直接获取
+                music_selectors = [
+                    ".m-playlist .title",
+                    "[class*='playlist'] [class*='name']",
+                    ".song-list .song-name",
+                ]
+
+                for selector in music_selectors:
+                    elements = await page.query_selector_all(selector)
+                    for elem in elements:
+                        try:
+                            title = await elem.inner_text()
+                            title = title.strip() if title else ""
+
+                            if title and len(title) > 2 and title not in seen:
+                                seen.add(title)
+                                items.append({
+                                    "title": title[:200],
+                                    "url": "",
+                                    "image": "",
+                                })
+                        except:
+                            pass
+
+        else:
+            # 通用爬取逻辑
+            for _ in range(3):
+                links = await page.query_selector_all("a[href]")
+                for link in links:
+                    try:
+                        href = await link.get_attribute("href")
+                        text = await link.inner_text()
+                        if href and href not in seen and len(text.strip()) > 5:
+                            seen.add(href)
+                            img = await link.query_selector("img")
+                            img_src = await img.get_attribute("src") if img else ""
+                            base = page.url.split("/")[2]
+                            full_url = href if href.startswith("http") else f"https://{base}{href}"
+                            items.append({
+                                "title": text.strip()[:200],
+                                "url": full_url,
+                                "image": img_src,
+                            })
+                    except:
+                        continue
+
+                await page.evaluate("window.scrollBy(0, window.innerHeight)")
+                await asyncio.sleep(1.5)
+
+        # 去重和清理
         unique = []
         seen_titles = set()
         for item in items:
-            key = item["title"][:50]
-            if key not in seen_titles and "备案" not in item["title"] and "许可证" not in item["title"]:
+            title = item["title"]
+            key = title[:50]
+
+            # 过滤无效条目
+            if key not in seen_titles:
+                # 过滤备案、许可证等
+                if "备案" in title or "许可证" in title:
+                    continue
+                # 过滤 "UP主名 · 收藏于日期" 格式的条目
+                if re.match(r'^[^·]+·\s*收藏于', title):
+                    continue
+                # 过滤纯UP主名（通常是短文本加 · 符号）
+                if "·" in title and len(title.split("·")[0]) < 10:
+                    continue
+                # 过滤B站知识学院等非视频标题
+                if "B站知识学院" in title or "周侃侃plus" in title:
+                    continue
+
                 seen_titles.add(key)
                 unique.append(item)
 
